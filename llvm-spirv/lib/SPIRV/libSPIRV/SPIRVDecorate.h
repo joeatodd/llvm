@@ -190,14 +190,18 @@ public:
       return ExtensionID::SPV_INTEL_fpga_cluster_attributes;
     case DecorationFuseLoopsInFunctionINTEL:
       return ExtensionID::SPV_INTEL_loop_fuse;
-    case DecorationCallableFunctionINTEL:
+    case internal::DecorationCallableFunctionINTEL:
       return ExtensionID::SPV_INTEL_fast_composite;
+    case internal::DecorationMathOpDSPModeINTEL:
+      return ExtensionID::SPV_INTEL_fpga_dsp_control;
     case internal::DecorationInitiationIntervalINTEL:
       return ExtensionID::SPV_INTEL_fpga_invocation_pipelining_attributes;
     case internal::DecorationMaxConcurrencyINTEL:
       return ExtensionID::SPV_INTEL_fpga_invocation_pipelining_attributes;
     case internal::DecorationPipelineEnableINTEL:
       return ExtensionID::SPV_INTEL_fpga_invocation_pipelining_attributes;
+    case internal::DecorationRuntimeAlignedINTEL:
+      return ExtensionID::SPV_INTEL_runtime_aligned;
     default:
       return {};
     }
@@ -314,7 +318,7 @@ public:
       : SPIRVDecorateGeneric(OC), MemberNumber(SPIRVWORD_MAX) {}
 
   llvm::Optional<ExtensionID> getRequiredExtension() const override {
-    switch (Dec) {
+    switch (static_cast<size_t>(Dec)) {
     case DecorationRegisterINTEL:
     case DecorationMemoryINTEL:
     case DecorationNumbanksINTEL:
@@ -337,6 +341,8 @@ public:
       return ExtensionID::SPV_INTEL_io_pipes;
     case DecorationBufferLocationINTEL:
       return ExtensionID::SPV_INTEL_fpga_buffer_location;
+    case internal::DecorationRuntimeAlignedINTEL:
+      return ExtensionID::SPV_INTEL_runtime_aligned;
     default:
       return {};
     }
@@ -494,7 +500,7 @@ public:
 };
 
 class SPIRVDecorateFuncParamDescAttr
-    : public SPIRVDecorateStrAttrBase<DecorationFuncParamDescINTEL> {
+    : public SPIRVDecorateStrAttrBase<internal::DecorationFuncParamDescINTEL> {
 public:
   //  Complete constructor for UserSemantic decoration
   SPIRVDecorateFuncParamDescAttr(SPIRVEntry *TheTarget,
@@ -679,6 +685,15 @@ public:
                                         SPIRVWord Independent)
       : SPIRVDecorate(spv::DecorationFuseLoopsInFunctionINTEL, TheTarget, Depth,
                       Independent){};
+};
+
+class SPIRVDecorateMathOpDSPModeINTEL : public SPIRVDecorate {
+public:
+  // Complete constructor for SPIRVDecorateMathOpDSPModeINTEL
+  SPIRVDecorateMathOpDSPModeINTEL(SPIRVEntry *TheTarget, SPIRVWord Mode,
+                                  SPIRVWord Propagate)
+      : SPIRVDecorate(spv::internal::DecorationMathOpDSPModeINTEL, TheTarget,
+                      Mode, Propagate){};
 };
 
 class SPIRVDecorateAliasScopeINTEL : public SPIRVDecorateId {

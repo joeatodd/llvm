@@ -180,6 +180,8 @@ protected:
 
   // The fallback for the printer is to print it the generic assembly form.
   static void print(Operation *op, OpAsmPrinter &p);
+  static void printOpName(Operation *op, OpAsmPrinter &p,
+                          StringRef defaultDialect);
 
   /// Mutability management is handled by the OpWrapper/OpConstWrapper classes,
   /// so we can cast it away here.
@@ -267,10 +269,14 @@ LogicalResult verifyZeroSuccessor(Operation *op);
 LogicalResult verifyOneSuccessor(Operation *op);
 LogicalResult verifyNSuccessors(Operation *op, unsigned numSuccessors);
 LogicalResult verifyAtLeastNSuccessors(Operation *op, unsigned numSuccessors);
+LogicalResult verifyValueSizeAttr(Operation *op, StringRef attrName,
+                                  StringRef valueGroupName,
+                                  size_t expectedCount);
 LogicalResult verifyOperandSizeAttr(Operation *op, StringRef sizeAttrName);
 LogicalResult verifyResultSizeAttr(Operation *op, StringRef sizeAttrName);
 LogicalResult verifyNoRegionArguments(Operation *op);
 LogicalResult verifyElementwise(Operation *op);
+LogicalResult verifyIsIsolatedFromAbove(Operation *op);
 } // namespace impl
 
 /// Helper class for implementing traits.  Clients are not expected to interact
@@ -1163,10 +1169,7 @@ class IsIsolatedFromAbove
     : public TraitBase<ConcreteType, IsIsolatedFromAbove> {
 public:
   static LogicalResult verifyTrait(Operation *op) {
-    for (auto &region : op->getRegions())
-      if (!region.isIsolatedFromAbove(op->getLoc()))
-        return failure();
-    return success();
+    return impl::verifyIsIsolatedFromAbove(op);
   }
 };
 
@@ -1621,6 +1624,19 @@ public:
         reinterpret_cast<Operation *>(const_cast<void *>(pointer)));
   }
 
+  /// Attach the given models as implementations of the corresponding interfaces
+  /// for the concrete operation.
+  template <typename... Models>
+  static void attachInterface(MLIRContext &context) {
+    AbstractOperation *abstract = AbstractOperation::lookupMutable(
+        ConcreteType::getOperationName(), &context);
+    if (!abstract)
+      llvm::report_fatal_error(
+          "Attempting to attach an interface to an unregistered operation " +
+          ConcreteType::getOperationName() + ".");
+    abstract->interfaceMap.insert<Models...>();
+  }
+
 private:
   /// Trait to check if T provides a 'fold' method for a single result op.
   template <typename T, typename... Args>
@@ -1631,9 +1647,9 @@ private:
       llvm::is_detected<has_single_result_fold, T>;
   /// Trait to check if T provides a general 'fold' method.
   template <typename T, typename... Args>
-  using has_fold = decltype(
-      std::declval<T>().fold(std::declval<ArrayRef<Attribute>>(),
-                             std::declval<SmallVectorImpl<OpFoldResult> &>()));
+  using has_fold = decltype(std::declval<T>().fold(
+      std::declval<ArrayRef<Attribute>>(),
+      std::declval<SmallVectorImpl<OpFoldResult> &>()));
   template <typename T>
   using detect_has_fold = llvm::is_detected<has_fold, T>;
   /// Trait to check if T provides a 'print' method.
@@ -1762,8 +1778,8 @@ private:
   static std::enable_if_t<!detect_has_print<ConcreteOpT>::value,
                           AbstractOperation::PrintAssemblyFn>
   getPrintAssemblyFnImpl() {
-    return [](Operation *op, OpAsmPrinter &parser) {
-      return OpState::print(op, parser);
+    return [](Operation *op, OpAsmPrinter &printer, StringRef defaultDialect) {
+      return OpState::print(op, printer);
     };
   }
   /// The internal implementation of `getPrintAssemblyFn` that is invoked when
@@ -1774,14 +1790,26 @@ private:
   getPrintAssemblyFnImpl() {
     return &printAssembly;
   }
-  static void printAssembly(Operation *op, OpAsmPrinter &p) {
+  static void printAssembly(Operation *op, OpAsmPrinter &p,
+                            StringRef defaultDialect) {
+    OpState::printOpName(op, p, defaultDialect);
     return cast<ConcreteType>(op).print(p);
   }
   /// Implementation of `VerifyInvariantsFn` AbstractOperation hook.
   static AbstractOperation::VerifyInvariantsFn getVerifyInvariantsFn() {
     return &verifyInvariants;
   }
+
+  static constexpr bool hasNoDataMembers() {
+    // Checking that the derived class does not define any member by comparing
+    // its size to an ad-hoc EmptyOp.
+    class EmptyOp : public Op<EmptyOp, Traits...> {};
+    return sizeof(ConcreteType) == sizeof(EmptyOp);
+  }
+
   static LogicalResult verifyInvariants(Operation *op) {
+    static_assert(hasNoDataMembers(),
+                  "Op class shouldn't define new data members");
     return failure(
         failed(op_definition_impl::verifyTraits<VerifiableTraitsTupleT>(op)) ||
         failed(cast<ConcreteType>(op).verify()));

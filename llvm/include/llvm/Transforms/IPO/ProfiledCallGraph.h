@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TOOLS_LLVM_PROFGEN_PROFILEDCALLGRAPH_H
-#define LLVM_TOOLS_LLVM_PROFGEN_PROFILEDCALLGRAPH_H
+#ifndef LLVM_TRANSFORMS_IPO_PROFILEDCALLGRAPH_H
+#define LLVM_TRANSFORMS_IPO_PROFILEDCALLGRAPH_H
 
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/StringMap.h"
@@ -17,7 +17,6 @@
 #include "llvm/Transforms/IPO/SampleContextTracker.h"
 #include <queue>
 #include <set>
-#include <string>
 
 using namespace llvm;
 using namespace sampleprof;
@@ -43,7 +42,7 @@ public:
   using iterator = std::set<ProfiledCallGraphNode *>::iterator;
 
   // Constructor for non-CS profile.
-  ProfiledCallGraph(StringMap<FunctionSamples> &ProfileMap) {
+  ProfiledCallGraph(SampleProfileMap &ProfileMap) {
     assert(!FunctionSamples::ProfileIsCS && "CS profile is not handled here");
     for (const auto &Samples : ProfileMap) {
       addProfiledCalls(Samples.second);

@@ -649,7 +649,7 @@ bool ItaniumMangleContextImpl::isUniqueInternalLinkageDecl(
 
   // For C functions without prototypes, return false as their
   // names should not be mangled.
-  if (!FD->hasPrototype())
+  if (!FD->getType()->getAs<FunctionProtoType>())
     return false;
 
   if (isInternalLinkageDecl(ND))
@@ -1518,9 +1518,16 @@ void CXXNameMangler::mangleUnqualifiedName(GlobalDecl GD,
     // <lambda-sig> ::= <template-param-decl>* <parameter-type>+
     //     # Parameter types or 'v' for 'void'.
     if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(TD)) {
-      if (Record->isLambda() && (Record->getLambdaManglingNumber() ||
-                                 Context.getDiscriminatorOverride()(
-                                     Context.getASTContext(), Record))) {
+      llvm::Optional<unsigned> DeviceNumber =
+          Context.getDiscriminatorOverride()(Context.getASTContext(), Record);
+
+      // If we have a device-number via the discriminator, use that to mangle
+      // the lambda, otherwise use the typical lambda-mangling-number. In either
+      // case, a '0' should be mangled as a normal unnamed class instead of as a
+      // lambda.
+      if (Record->isLambda() &&
+          ((DeviceNumber && *DeviceNumber > 0) ||
+           (!DeviceNumber && Record->getLambdaManglingNumber() > 0))) {
         assert(!AdditionalAbiTags &&
                "Lambda type cannot have additional abi tags");
         mangleLambda(Record);
@@ -1960,8 +1967,8 @@ void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
   // mangling number for this lambda.
   llvm::Optional<unsigned> DeviceNumber =
       Context.getDiscriminatorOverride()(Context.getASTContext(), Lambda);
-  unsigned Number = DeviceNumber.hasValue() ? *DeviceNumber
-                                            : Lambda->getLambdaManglingNumber();
+  unsigned Number =
+      DeviceNumber ? *DeviceNumber : Lambda->getLambdaManglingNumber();
 
   assert(Number > 0 && "Lambda should be mangled as an unnamed class");
   if (Number > 1)
@@ -3114,6 +3121,8 @@ StringRef CXXNameMangler::getCallingConvQualifierName(CallingConv CC) {
     return "ms_abi";
   case CC_Swift:
     return "swiftcall";
+  case CC_SwiftAsync:
+    return "swiftasynccall";
   }
   llvm_unreachable("bad calling convention");
 }
@@ -3148,6 +3157,7 @@ CXXNameMangler::mangleExtParameterInfo(FunctionProtoType::ExtParameterInfo PI) {
 
   // All of these start with "swift", so they come before "ns_consumed".
   case ParameterABI::SwiftContext:
+  case ParameterABI::SwiftAsyncContext:
   case ParameterABI::SwiftErrorResult:
   case ParameterABI::SwiftIndirectResult:
     mangleVendorQualifier(getParameterABISpelling(PI.getABI()));
@@ -5052,6 +5062,15 @@ recurse:
     Out << "u33__builtin_sycl_unique_stable_name";
     mangleType(USN->getTypeSourceInfo()->getType());
 
+    Out << "E";
+    break;
+  }
+  case Expr::SYCLUniqueStableIdExprClass: {
+    const auto *USID = cast<SYCLUniqueStableIdExpr>(E);
+    NotPrimaryExpr();
+
+    Out << "cl31__builtin_sycl_unique_stable_id";
+    mangleExpression(USID->getExpr());
     Out << "E";
     break;
   }

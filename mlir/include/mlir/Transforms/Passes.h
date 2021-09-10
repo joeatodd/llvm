@@ -17,7 +17,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/LocationSnapshot.h"
 #include "mlir/Transforms/ViewOpGraph.h"
-#include "mlir/Transforms/ViewRegionGraph.h"
+#include "llvm/Support/Debug.h"
 #include <limits>
 
 namespace mlir {
@@ -95,10 +95,6 @@ std::unique_ptr<OperationPass<FuncOp>> createLoopCoalescingPass();
 /// Creates a pass that transforms a single ParallelLoop over N induction
 /// variables into another ParallelLoop over less than N induction variables.
 std::unique_ptr<Pass> createParallelLoopCollapsingPass();
-
-/// Creates a pass to perform optimizations relying on memref dataflow such as
-/// store to load forwarding, elimination of dead stores, and dead allocs.
-std::unique_ptr<OperationPass<FuncOp>> createMemRefDataFlowOptPass();
 
 /// Creates a pass to strip debug information from a function.
 std::unique_ptr<Pass> createStripDebugInfoPass();

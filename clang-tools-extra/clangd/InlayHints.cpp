@@ -13,6 +13,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceManager.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace clang {
 namespace clangd {
@@ -22,11 +23,24 @@ public:
   InlayHintVisitor(std::vector<InlayHint> &Results, ParsedAST &AST)
       : Results(Results), AST(AST.getASTContext()),
         MainFileID(AST.getSourceManager().getMainFileID()),
-        Resolver(AST.getHeuristicResolver()) {
+        Resolver(AST.getHeuristicResolver()),
+        TypeHintPolicy(this->AST.getPrintingPolicy()) {
     bool Invalid = false;
     llvm::StringRef Buf =
         AST.getSourceManager().getBufferData(MainFileID, &Invalid);
     MainFileBuf = Invalid ? StringRef{} : Buf;
+
+    TypeHintPolicy.SuppressScope = true; // keep type names short
+    TypeHintPolicy.AnonymousTagLocations =
+        false; // do not print lambda locations
+    // Print canonical types. Otherwise, SuppressScope would result in
+    // things like "metafunction<args>::type" being shorted to just "type",
+    // which is useless. This is particularly important for structured
+    // bindings that use the tuple_element protocol, where the non-canonical
+    // types would be "tuple_element<I, A>::type".
+    // Note, for "auto", we would often prefer sugared types, but the AST
+    // doesn't currently retain them in DeducedType anyways.
+    TypeHintPolicy.PrintCanonicalTypes = true;
   }
 
   bool VisitCXXConstructExpr(CXXConstructExpr *E) {
@@ -64,6 +78,41 @@ public:
       return true;
 
     processCall(E->getRParenLoc(), Callee, {E->getArgs(), E->getNumArgs()});
+    return true;
+  }
+
+  bool VisitFunctionDecl(FunctionDecl *D) {
+    if (auto *AT = D->getReturnType()->getContainedAutoType()) {
+      QualType Deduced = AT->getDeducedType();
+      if (!Deduced.isNull()) {
+        addTypeHint(D->getFunctionTypeLoc().getRParenLoc(), D->getReturnType(),
+                    "-> ");
+      }
+    }
+
+    return true;
+  }
+
+  bool VisitVarDecl(VarDecl *D) {
+    // Do not show hints for the aggregate in a structured binding,
+    // but show hints for the individual bindings.
+    if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+      for (auto *Binding : DD->bindings()) {
+        addTypeHint(Binding->getLocation(), Binding->getType(), ": ");
+      }
+      return true;
+    }
+
+    if (D->getType()->getContainedAutoType()) {
+      if (!D->getType()->isDependentType()) {
+        // Our current approach is to place the hint on the variable
+        // and accordingly print the full type
+        // (e.g. for `const auto& x = 42`, print `const int&`).
+        // Alternatively, we could place the hint on the `auto`
+        // (and then just print the type deduced for the `auto`).
+        addTypeHint(D->getLocation(), D->getType(), ": ");
+      }
+    }
     return true;
   }
 
@@ -118,7 +167,7 @@ private:
       return false;
 
     StringRef Name = getSimpleName(*Callee);
-    if (!Name.startswith_lower("set"))
+    if (!Name.startswith_insensitive("set"))
       return false;
 
     // In addition to checking that the function has one parameter and its
@@ -130,10 +179,10 @@ private:
     // This currently doesn't handle cases where params use snake_case
     // and functions don't, e.g.
     //   void setExceptionHandler(EHFunc exception_handler);
-    // We could improve this by replacing `equals_lower` with some
+    // We could improve this by replacing `equals_insensitive` with some
     // `sloppy_equals` which ignores case and also skips underscores.
     StringRef WhatItIsSetting = Name.substr(3).ltrim("_");
-    return WhatItIsSetting.equals_lower(ParamNames[0]);
+    return WhatItIsSetting.equals_insensitive(ParamNames[0]);
   }
 
   bool shouldHint(const Expr *Arg, StringRef ParamName) {
@@ -266,6 +315,10 @@ private:
         toHalfOpenFileRange(AST.getSourceManager(), AST.getLangOpts(), R);
     if (!FileRange)
       return;
+    // The hint may be in a file other than the main file (for example, a header
+    // file that was included after the preamble), do not show in that case.
+    if (!AST.getSourceManager().isWrittenInMainFile(FileRange->getBegin()))
+      return;
     Results.push_back(InlayHint{
         Range{
             sourceLocToPosition(AST.getSourceManager(), FileRange->getBegin()),
@@ -273,11 +326,21 @@ private:
         Kind, Label.str()});
   }
 
+  void addTypeHint(SourceRange R, QualType T, llvm::StringRef Prefix) {
+    // Do not print useless "NULL TYPE" hint.
+    if (!T.getTypePtrOrNull())
+      return;
+
+    addInlayHint(R, InlayHintKind::TypeHint,
+                 std::string(Prefix) + T.getAsString(TypeHintPolicy));
+  }
+
   std::vector<InlayHint> &Results;
   ASTContext &AST;
   FileID MainFileID;
   StringRef MainFileBuf;
   const HeuristicResolver *Resolver;
+  PrintingPolicy TypeHintPolicy;
 };
 
 std::vector<InlayHint> inlayHints(ParsedAST &AST) {

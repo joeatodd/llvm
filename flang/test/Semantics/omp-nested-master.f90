@@ -1,4 +1,5 @@
 ! RUN: %S/test_errors.sh %s %t %flang_fc1 -fopenmp
+! REQUIRES: shell
 ! OpenMP Version 4.5
 ! Various checks with the nesting of MASTER construct
 
@@ -86,6 +87,7 @@ program omp_nest_master
 
   !$omp ordered
   do i = 1, 10
+    !ERROR: TEAMS region can only be strictly nested within the implicit parallel region or TARGET region
     !$omp teams
     !$omp distribute
     do k =1, 10
@@ -101,6 +103,7 @@ program omp_nest_master
 
   !$omp critical
   do i = 1, 10
+    !ERROR: TEAMS region can only be strictly nested within the implicit parallel region or TARGET region
     !$omp teams
     !$omp distribute
     do k =1, 10
@@ -116,6 +119,7 @@ program omp_nest_master
 
   !$omp taskloop
   do i = 1, 10
+    !ERROR: TEAMS region can only be strictly nested within the implicit parallel region or TARGET region
     !$omp teams
     !$omp distribute
     do k =1, 10
@@ -132,6 +136,7 @@ program omp_nest_master
 
   !$omp task
   do i = 1, 10
+    !ERROR: TEAMS region can only be strictly nested within the implicit parallel region or TARGET region
     !$omp teams
     !$omp distribute
     do k =1, 10

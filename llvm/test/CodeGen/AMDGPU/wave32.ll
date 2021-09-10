@@ -347,9 +347,9 @@ bb:
 ; GFX1064: v_add_co_u32 v{{[0-9]+}}, vcc, v{{[0-9]+}}, v{{[0-9]+}}
 ; GFX1064: v_add_co_u32 v{{[0-9]+}}, vcc, v{{[0-9]+}}, v{{[0-9]+}}
 ; GFX1064: v_add_co_ci_u32_e32 v{{[0-9]+}}, vcc, 0, v{{[0-9]+}}, vcc{{$}}
-; GFX1064: v_sub_co_u32 v{{[0-9]+}}, s[{{[0-9:]+}}], s{{[0-9]+}}, v{{[0-9]+}}
-; GFX1064: v_subrev_co_ci_u32_e64 v{{[0-9]+}}, vcc, {{[vs][0-9]+}}, v{{[0-9]+}}, s[{{[0-9:]+}}]
-; GFX1064: v_sub_co_ci_u32_e64 v{{[0-9]+}}, s[{{[0-9:]+}}], {{[vs][0-9]+}}, v{{[0-9]+}}, s[{{[0-9:]+}}]
+; GFX1064: v_sub_co_u32 v{{[0-9]+}}, vcc, s{{[0-9]+}}, v{{[0-9]+}}
+; GFX1064: v_subrev_co_ci_u32_e64 v{{[0-9]+}}, s[{{[0-9:]+}}], {{[vs][0-9]+}}, v{{[0-9]+}}, vcc
+; GFX1064: v_sub_co_ci_u32_e32 v{{[0-9]+}}, vcc, {{[vs][0-9]+}}, v{{[0-9]+}}, vcc
 define amdgpu_kernel void @test_udiv64(i64 addrspace(1)* %arg) #0 {
 bb:
   %tmp = getelementptr inbounds i64, i64 addrspace(1)* %arg, i64 1
@@ -1129,8 +1129,8 @@ declare void @external_void_func_void() #1
 
 ; GCN-NEXT: v_writelane_b32 v40, s33, 2
 ; GCN: s_mov_b32 s33, s32
-; GFX1064: s_add_u32 s32, s32, 0x400
-; GFX1032: s_add_u32 s32, s32, 0x200
+; GFX1064: s_addk_i32 s32, 0x400
+; GFX1032: s_addk_i32 s32, 0x200
 
 
 ; GCN-DAG: v_writelane_b32 v40, s30, 0
@@ -1140,8 +1140,8 @@ declare void @external_void_func_void() #1
 ; GCN-DAG: v_readlane_b32 s5, v40, 1
 
 
-; GFX1064: s_sub_u32 s32, s32, 0x400
-; GFX1032: s_sub_u32 s32, s32, 0x200
+; GFX1064: s_addk_i32 s32, 0xfc00
+; GFX1032: s_addk_i32 s32, 0xfe00
 ; GCN: v_readlane_b32 s33, v40, 2
 ; GFX1064: s_or_saveexec_b64 [[COPY_EXEC1:s\[[0-9]+:[0-9]+\]]], -1{{$}}
 ; GFX1032: s_or_saveexec_b32 [[COPY_EXEC1:s[0-9]]], -1{{$}}

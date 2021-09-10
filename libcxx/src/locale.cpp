@@ -81,33 +81,11 @@ struct release
     void operator()(locale::facet* p) {p->__release_shared();}
 };
 
-template <class T, class A0>
-inline
-T&
-make(A0 a0)
+template <class T, class ...Args>
+T& make(Args ...args)
 {
     static typename aligned_storage<sizeof(T)>::type buf;
-    auto *obj = ::new (&buf) T(a0);
-    return *obj;
-}
-
-template <class T, class A0, class A1>
-inline
-T&
-make(A0 a0, A1 a1)
-{
-    static typename aligned_storage<sizeof(T)>::type buf;
-    ::new (&buf) T(a0, a1);
-    return *reinterpret_cast<T*>(&buf);
-}
-
-template <class T, class A0, class A1, class A2>
-inline
-T&
-make(A0 a0, A1 a1, A2 a2)
-{
-    static typename aligned_storage<sizeof(T)>::type buf;
-    auto *obj = ::new (&buf) T(a0, a1, a2);
+    auto *obj = ::new (&buf) T(args...);
     return *obj;
 }
 
@@ -4597,7 +4575,10 @@ void
 __num_put_base::__format_int(char* __fmtp, const char* __len, bool __signd,
                              ios_base::fmtflags __flags)
 {
-    if (__flags & ios_base::showpos)
+    if ((__flags & ios_base::showpos) &&
+        (__flags & ios_base::basefield) != ios_base::oct &&
+        (__flags & ios_base::basefield) != ios_base::hex &&
+	__signd)
         *__fmtp++ = '+';
     if (__flags & ios_base::showbase)
         *__fmtp++ = '#';

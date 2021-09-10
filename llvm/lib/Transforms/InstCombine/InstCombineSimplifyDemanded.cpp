@@ -829,6 +829,29 @@ Value *InstCombinerImpl::SimplifyDemandedUseBits(Value *V, APInt DemandedMask,
         KnownBitsComputed = true;
         break;
       }
+      case Intrinsic::umax: {
+        // UMax(A, C) == A if ...
+        // The lowest non-zero bit of DemandMask is higher than the highest
+        // non-zero bit of C.
+        const APInt *C;
+        unsigned CTZ = DemandedMask.countTrailingZeros();
+        if (match(II->getArgOperand(1), m_APInt(C)) &&
+            CTZ >= C->getActiveBits())
+          return II->getArgOperand(0);
+        break;
+      }
+      case Intrinsic::umin: {
+        // UMin(A, C) == A if ...
+        // The lowest non-zero bit of DemandMask is higher than the highest
+        // non-one bit of C.
+        // This comes from using DeMorgans on the above umax example.
+        const APInt *C;
+        unsigned CTZ = DemandedMask.countTrailingZeros();
+        if (match(II->getArgOperand(1), m_APInt(C)) &&
+            CTZ >= C->getBitWidth() - C->countLeadingOnes())
+          return II->getArgOperand(0);
+        break;
+      }
       default: {
         // Handle target specific intrinsics
         Optional<Value *> V = targetSimplifyDemandedUseBitsIntrinsic(
@@ -1262,7 +1285,7 @@ Value *InstCombinerImpl::SimplifyDemandedVectorElts(Value *V,
     if (all_of(Shuffle->getShuffleMask(), [](int Elt) { return Elt == 0; }) &&
         DemandedElts.isAllOnesValue()) {
       if (!match(I->getOperand(1), m_Undef())) {
-        I->setOperand(1, UndefValue::get(I->getOperand(1)->getType()));
+        I->setOperand(1, PoisonValue::get(I->getOperand(1)->getType()));
         MadeChange = true;
       }
       APInt LeftDemanded(OpWidth, 1);

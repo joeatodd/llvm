@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <detail/allowlist.hpp>
-#include <detail/config.hpp> // for SyclBeMap and SyclDeviceTypeMap
+#include <detail/config.hpp> // for getSyclBeMap() and getSyclDeviceTypeMap()
 
 #include <gtest/gtest.h>
 
@@ -157,24 +157,23 @@ TEST(ParseAllowListTests, CheckMissingClosedDoubleCurlyBracesAreHandled) {
 
 TEST(ParseAllowListTests, CheckAllValidBackendNameValuesAreProcessed) {
   std::string AllowList;
-  for (const auto &SyclBe : sycl::detail::SyclBeMap) {
+  for (const auto &SyclBe : sycl::detail::getSyclBeMap()) {
     if (!AllowList.empty())
       AllowList += "|";
     AllowList += "BackendName:" + SyclBe.first;
   }
   sycl::detail::AllowListParsedT ActualValue =
       sycl::detail::parseAllowList(AllowList);
-  sycl::detail::AllowListParsedT ExpectedValue{{{"BackendName", "host"}},
-                                               {{"BackendName", "opencl"}},
-                                               {{"BackendName", "level_zero"}},
-                                               {{"BackendName", "cuda"}},
-                                               {{"BackendName", "*"}}};
+  sycl::detail::AllowListParsedT ExpectedValue{
+      {{"BackendName", "host"}},       {{"BackendName", "opencl"}},
+      {{"BackendName", "level_zero"}}, {{"BackendName", "cuda"}},
+      {{"BackendName", "rocm"}},       {{"BackendName", "*"}}};
   EXPECT_EQ(ExpectedValue, ActualValue);
 }
 
 TEST(ParseAllowListTests, CheckAllValidDeviceTypeValuesAreProcessed) {
   std::string AllowList;
-  for (const auto &SyclDeviceType : sycl::detail::SyclDeviceTypeMap) {
+  for (const auto &SyclDeviceType : sycl::detail::getSyclDeviceTypeMap()) {
     if (!AllowList.empty())
       AllowList += "|";
     AllowList += "DeviceType:" + SyclDeviceType.first;
@@ -251,4 +250,65 @@ TEST(ParseAllowListTests, CheckMultipleColonsBetweenKeyAndValue) {
       sycl::detail::parseAllowList("DeviceVendorId:::::0x1234");
   sycl::detail::AllowListParsedT ExpectedValue{{{"DeviceVendorId", "0x1234"}}};
   EXPECT_EQ(ExpectedValue, ActualValue);
+}
+
+TEST(ParseAllowListTests, CheckExceptionIsThrownForValueWOColonDelim) {
+  try {
+    sycl::detail::AllowListParsedT ActualValue =
+        sycl::detail::parseAllowList("SomeValueWOColonDelimiter");
+    throw std::logic_error("sycl::runtime_error didn't throw");
+  } catch (sycl::runtime_error const &e) {
+    EXPECT_EQ(std::string("SYCL_DEVICE_ALLOWLIST has incorrect format. For "
+                          "details, please refer to "
+                          "https://github.com/intel/llvm/blob/sycl/sycl/"
+                          "doc/EnvironmentVariables.md -30 (CL_INVALID_VALUE)"),
+              e.what());
+  } catch (...) {
+    FAIL() << "Expected sycl::runtime_error";
+  }
+}
+
+TEST(ParseAllowListTests, CheckDeviceNameDeprecationWarning) {
+  testing::internal::CaptureStdout();
+  sycl::detail::parseAllowList("DeviceName:{{regex}}");
+  std::string ActualOutput = testing::internal::GetCapturedStdout();
+  EXPECT_EQ("\nWARNING: DeviceName in SYCL_DEVICE_ALLOWLIST is deprecated. "
+            "Please use BackendName, DeviceType and DeviceVendorId instead. "
+            "For details, please refer to "
+            "https://github.com/intel/llvm/blob/sycl/sycl/doc/"
+            "EnvironmentVariables.md\n\n",
+            ActualOutput);
+}
+
+TEST(ParseAllowListTests, CheckPlatformNameDeprecationWarning) {
+  testing::internal::CaptureStdout();
+  sycl::detail::parseAllowList("PlatformName:{{regex}}");
+  std::string ActualOutput = testing::internal::GetCapturedStdout();
+  EXPECT_EQ("\nWARNING: PlatformName in SYCL_DEVICE_ALLOWLIST is deprecated. "
+            "Please use BackendName, DeviceType and DeviceVendorId instead. "
+            "For details, please refer to "
+            "https://github.com/intel/llvm/blob/sycl/sycl/doc/"
+            "EnvironmentVariables.md\n\n",
+            ActualOutput);
+}
+
+TEST(ParseAllowListTests, CheckDeviceNameAndPlatformNameDeprecationWarning) {
+  testing::internal::CaptureStdout();
+  sycl::detail::parseAllowList("DeviceName:{{regex}},PlatformName:{{regex}}");
+  std::string ActualOutput = testing::internal::GetCapturedStdout();
+  EXPECT_EQ("\nWARNING: DeviceName and PlatformName in SYCL_DEVICE_ALLOWLIST "
+            "are deprecated. Please use BackendName, DeviceType and "
+            "DeviceVendorId instead. For details, please refer to "
+            "https://github.com/intel/llvm/blob/sycl/sycl/doc/"
+            "EnvironmentVariables.md\n\n",
+            ActualOutput);
+}
+
+TEST(ParseAllowListTests, CheckNoDeprecationWarningForNotDeprecatedKeys) {
+  testing::internal::CaptureStdout();
+  sycl::detail::parseAllowList(
+      "BackendName:level_zero,DeviceType:gpu,DeviceVendorId:0x0000,"
+      "DriverVersion:{{regex1}},PlatformVersion:{{regex2}}");
+  std::string ActualOutput = testing::internal::GetCapturedStdout();
+  EXPECT_EQ("", ActualOutput);
 }

@@ -66,14 +66,27 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
   size_t KeyStart = 0, KeyEnd = 0, ValueStart = 0, ValueEnd = 0,
          DeviceDescIndex = 0;
 
-  const char DelimeterBtwKeyAndValue = ':';
-  const char DelimeterBtwItemsInDeviceDesc = ',';
-  const char DelimeterBtwDeviceDescs = '|';
+  const char DelimiterBtwKeyAndValue = ':';
+  const char DelimiterBtwItemsInDeviceDesc = ',';
+  const char DelimiterBtwDeviceDescs = '|';
 
-  while ((KeyEnd = AllowListRaw.find(DelimeterBtwKeyAndValue, KeyStart)) !=
+  if (AllowListRaw.find(DelimiterBtwKeyAndValue, KeyStart) == std::string::npos)
+    throw sycl::runtime_error("SYCL_DEVICE_ALLOWLIST has incorrect format. For "
+                              "details, please refer to "
+                              "https://github.com/intel/llvm/blob/sycl/sycl/"
+                              "doc/EnvironmentVariables.md",
+                              PI_INVALID_VALUE);
+
+  const std::string &DeprecatedKeyNameDeviceName = DeviceNameKeyName;
+  const std::string &DeprecatedKeyNamePlatformName = PlatformNameKeyName;
+
+  bool IsDeprecatedKeyNameDeviceNameWasUsed = false;
+  bool IsDeprecatedKeyNamePlatformNameWasUsed = false;
+
+  while ((KeyEnd = AllowListRaw.find(DelimiterBtwKeyAndValue, KeyStart)) !=
          std::string::npos) {
     if ((ValueStart = AllowListRaw.find_first_not_of(
-             DelimeterBtwKeyAndValue, KeyEnd)) == std::string::npos)
+             DelimiterBtwKeyAndValue, KeyEnd)) == std::string::npos)
       break;
     const std::string &Key = AllowListRaw.substr(KeyStart, KeyEnd - KeyStart);
 
@@ -89,6 +102,13 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
           PI_INVALID_VALUE);
     }
 
+    if (Key == DeprecatedKeyNameDeviceName) {
+      IsDeprecatedKeyNameDeviceNameWasUsed = true;
+    }
+    if (Key == DeprecatedKeyNamePlatformName) {
+      IsDeprecatedKeyNamePlatformNameWasUsed = true;
+    }
+
     bool ShouldAllocateNewDeviceDescMap = false;
 
     std::string Value;
@@ -102,11 +122,11 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
       if (std::find(SupportedKeyNamesHaveFixedValue.begin(),
                     SupportedKeyNamesHaveFixedValue.end(),
                     Key) != SupportedKeyNamesHaveFixedValue.end()) {
-        ValueEnd = AllowListRaw.find(DelimeterBtwItemsInDeviceDesc, ValueStart);
+        ValueEnd = AllowListRaw.find(DelimiterBtwItemsInDeviceDesc, ValueStart);
         // check if it is the last Key:Value pair in the device description, and
         // correct end position of that value
         if (size_t ValueEndCand =
-                AllowListRaw.find(DelimeterBtwDeviceDescs, ValueStart);
+                AllowListRaw.find(DelimiterBtwDeviceDescs, ValueStart);
             (ValueEndCand != std::string::npos) && (ValueEndCand < ValueEnd)) {
           ValueEnd = ValueEndCand;
           ShouldAllocateNewDeviceDescMap = true;
@@ -141,8 +161,8 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
         // check that values of keys, which should have some fixed format, are
         // valid. E.g., for BackendName key, the allowed values are only ones
         // described in SyclBeMap
-        ValidateEnumValues(BackendNameKeyName, SyclBeMap);
-        ValidateEnumValues(DeviceTypeKeyName, SyclDeviceTypeMap);
+        ValidateEnumValues(BackendNameKeyName, getSyclBeMap());
+        ValidateEnumValues(DeviceTypeKeyName, getSyclDeviceTypeMap());
 
         if (Key == DeviceVendorIdKeyName) {
           // DeviceVendorId should have hex format
@@ -191,22 +211,22 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
                     Postfix,
                 PI_INVALID_VALUE);
         }
-        size_t NextExpectedDelimeterPos = ValueEnd + Postfix.length();
+        size_t NextExpectedDelimiterPos = ValueEnd + Postfix.length();
         // if it is not the end of the string, check that symbol next to a
-        // postfix is a delimeter (, or ;)
-        if ((AllowListRaw.length() != NextExpectedDelimeterPos) &&
-            (AllowListRaw[NextExpectedDelimeterPos] !=
-             DelimeterBtwItemsInDeviceDesc) &&
-            (AllowListRaw[NextExpectedDelimeterPos] != DelimeterBtwDeviceDescs))
+        // postfix is a delimiter (, or ;)
+        if ((AllowListRaw.length() != NextExpectedDelimiterPos) &&
+            (AllowListRaw[NextExpectedDelimiterPos] !=
+             DelimiterBtwItemsInDeviceDesc) &&
+            (AllowListRaw[NextExpectedDelimiterPos] != DelimiterBtwDeviceDescs))
           throw sycl::runtime_error(
               "Unexpected symbol on position " +
-                  std::to_string(NextExpectedDelimeterPos) + ": " +
-                  AllowListRaw[NextExpectedDelimeterPos] +
-                  ". Should be either " + DelimeterBtwItemsInDeviceDesc +
-                  " or " + DelimeterBtwDeviceDescs,
+                  std::to_string(NextExpectedDelimiterPos) + ": " +
+                  AllowListRaw[NextExpectedDelimiterPos] +
+                  ". Should be either " + DelimiterBtwItemsInDeviceDesc +
+                  " or " + DelimiterBtwDeviceDescs,
               PI_INVALID_VALUE);
 
-        if (AllowListRaw[NextExpectedDelimeterPos] == DelimeterBtwDeviceDescs)
+        if (AllowListRaw[NextExpectedDelimiterPos] == DelimiterBtwDeviceDescs)
           ShouldAllocateNewDeviceDescMap = true;
 
         Value = AllowListRaw.substr(ValueStart, ValueEnd - ValueStart);
@@ -232,6 +252,27 @@ AllowListParsedT parseAllowList(const std::string &AllowListRaw) {
       ++DeviceDescIndex;
       AllowListParsed.emplace_back();
     }
+  }
+
+  if (IsDeprecatedKeyNameDeviceNameWasUsed &&
+      IsDeprecatedKeyNamePlatformNameWasUsed) {
+    std::cout << "\nWARNING: " << DeprecatedKeyNameDeviceName << " and "
+              << DeprecatedKeyNamePlatformName
+              << " in SYCL_DEVICE_ALLOWLIST are deprecated. ";
+  } else if (IsDeprecatedKeyNameDeviceNameWasUsed) {
+    std::cout << "\nWARNING: " << DeprecatedKeyNameDeviceName
+              << " in SYCL_DEVICE_ALLOWLIST is deprecated. ";
+  } else if (IsDeprecatedKeyNamePlatformNameWasUsed) {
+    std::cout << "\nWARNING: " << DeprecatedKeyNamePlatformName
+              << " in SYCL_DEVICE_ALLOWLIST is deprecated. ";
+  }
+  if (IsDeprecatedKeyNameDeviceNameWasUsed ||
+      IsDeprecatedKeyNamePlatformNameWasUsed) {
+    std::cout << "Please use " << BackendNameKeyName << ", "
+              << DeviceTypeKeyName << " and " << DeviceVendorIdKeyName
+              << " instead. For details, please refer to "
+                 "https://github.com/intel/llvm/blob/sycl/sycl/doc/"
+                 "EnvironmentVariables.md\n\n";
   }
 
   return AllowListParsed;
@@ -303,7 +344,7 @@ void applyAllowList(std::vector<RT::PiDevice> &PiDevices,
 
   // get BackendName value and put it to DeviceDesc
   sycl::backend Backend = Plugin.getBackend();
-  for (const auto &SyclBe : SyclBeMap) {
+  for (const auto &SyclBe : getSyclBeMap()) {
     if (SyclBe.second == Backend) {
       DeviceDesc.emplace(BackendNameKeyName, SyclBe.first);
       break;
@@ -329,7 +370,7 @@ void applyAllowList(std::vector<RT::PiDevice> &PiDevices,
                                             sizeof(RT::PiDeviceType),
                                             &PiDevType, nullptr);
     sycl::info::device_type DeviceType = pi::cast<info::device_type>(PiDevType);
-    for (const auto &SyclDeviceType : SyclDeviceTypeMap) {
+    for (const auto &SyclDeviceType : getSyclDeviceTypeMap()) {
       if (SyclDeviceType.second == DeviceType) {
         const auto &DeviceTypeValue = SyclDeviceType.first;
         DeviceDesc[DeviceTypeKeyName] = DeviceTypeValue;

@@ -878,6 +878,8 @@ def Availability : InheritableAttr {
              .Case("macos_app_extension", "macOS (App Extension)")
              .Case("tvos_app_extension", "tvOS (App Extension)")
              .Case("watchos_app_extension", "watchOS (App Extension)")
+             .Case("maccatalyst", "macCatalyst")
+             .Case("maccatalyst_app_extension", "macCatalyst (App Extension)")
              .Case("swift", "Swift")
              .Default(llvm::StringRef());
 }
@@ -891,6 +893,8 @@ static llvm::StringRef getPlatformNameSourceSpelling(llvm::StringRef Platform) {
              .Case("macos_app_extension", "macOSApplicationExtension")
              .Case("tvos_app_extension", "tvOSApplicationExtension")
              .Case("watchos_app_extension", "watchOSApplicationExtension")
+             .Case("maccatalyst", "macCatalyst")
+             .Case("maccatalyst_app_extension", "macCatalystApplicationExtension")
              .Case("zos", "z/OS")
              .Default(Platform);
 }
@@ -904,6 +908,8 @@ static llvm::StringRef canonicalizePlatformName(llvm::StringRef Platform) {
              .Case("macOSApplicationExtension", "macos_app_extension")
              .Case("tvOSApplicationExtension", "tvos_app_extension")
              .Case("watchOSApplicationExtension", "watchos_app_extension")
+             .Case("macCatalyst", "maccatalyst")
+             .Case("macCatalystApplicationExtension", "maccatalyst_app_extension")
              .Default(Platform);
 } }];
   let HasCustomParsing = 1;
@@ -1206,6 +1212,19 @@ def SYCLDevice : InheritableAttr {
   let Documentation = [SYCLDeviceDocs];
 }
 
+def GlobalStorageNonLocalVar : SubsetSubject<Var,
+                                             [{S->hasGlobalStorage() &&
+                                               !S->isLocalVarDeclOrParm()}],
+                                             "global variables">;
+
+def SYCLGlobalVar : InheritableAttr {
+  let Spellings = [GNU<"sycl_global_var">];
+  let Subjects = SubjectList<[GlobalStorageNonLocalVar], ErrorDiag>;
+  let LangOpts = [SYCLIsDevice];
+  // Only used internally by the SYCL implementation
+  let Documentation = [Undocumented];
+}
+
 def SYCLKernel : InheritableAttr {
   let Spellings = [Clang<"sycl_kernel">];
   let Subjects = SubjectList<[FunctionTmpl]>;
@@ -1245,6 +1264,14 @@ def SYCLSimdAccessorPtr : InheritableAttr {
   // No spelling, as this attribute can't be created in the source code.
   let Spellings = [];
   let Subjects = SubjectList<[ParmVar]>;
+  let Documentation = [Undocumented];
+}
+
+// Used to mark readonly accessors. It is not to be used directly in the source.
+def SYCLAccessorReadonly : Attr {
+  // This attribute has no spellings as it is only ever created implicitly.
+  let Spellings = [];
+  let SemaHandler = 0;
   let Documentation = [Undocumented];
 }
 
@@ -2143,7 +2170,7 @@ def : MutualExclusions<[IntelFPGADoublePump, IntelFPGASinglePump,
                         IntelFPGARegister]>;
 
 // One integral argument.
-def IntelFPGABankWidth : Attr {
+def IntelFPGABankWidth : InheritableAttr {
   let Spellings = [CXX11<"intelfpga","bankwidth">,
                    CXX11<"intel","bankwidth">];
   let Args = [ExprArgument<"Value">];
@@ -2154,7 +2181,7 @@ def IntelFPGABankWidth : Attr {
 }
 def : MutualExclusions<[IntelFPGARegister, IntelFPGABankWidth]>;
 
-def IntelFPGANumBanks : Attr {
+def IntelFPGANumBanks : InheritableAttr {
   let Spellings = [CXX11<"intelfpga","numbanks">,
                    CXX11<"intel","numbanks">];
   let Args = [ExprArgument<"Value">];
@@ -2233,6 +2260,7 @@ def IntelFPGABankBits : Attr {
   let Documentation = [IntelFPGABankBitsDocs];
 }
 def : MutualExclusions<[IntelFPGARegister, IntelFPGABankBits]>;
+def : MutualExclusions<[IntelFPGARegister, IntelFPGANumBanks]>;
 
 def IntelFPGAForcePow2Depth : InheritableAttr {
   let Spellings = [CXX11<"intelfpga","force_pow2_depth">,
@@ -2431,6 +2459,14 @@ def BPFPreserveAccessIndex : InheritableAttr,
   let LangOpts = [COnly];
 }
 
+def BTFTag : InheritableAttr {
+  let Spellings = [Clang<"btf_tag">];
+  let Args = [StringArgument<"BTFTag">];
+  let Subjects = SubjectList<[Var, Function, Record, Field], ErrorDiag>;
+  let Documentation = [BTFTagDocs];
+  let LangOpts = [COnly];
+}
+
 def WebAssemblyExportName : InheritableAttr,
                             TargetSpecificAttr<TargetWebAssembly> {
   let Spellings = [Clang<"export_name">];
@@ -2569,6 +2605,13 @@ def NoInstrumentFunction : InheritableAttr {
   let Spellings = [GCC<"no_instrument_function">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def NoProfileFunction : InheritableAttr {
+  let Spellings = [GCC<"no_profile_instrument_function">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [NoProfileInstrumentFunctionDocs];
   let SimpleHandler = 1;
 }
 
@@ -2943,11 +2986,10 @@ def NoDeref : TypeAttr {
   let Documentation = [NoDerefDocs];
 }
 
-// Default arguments can only be used with the intel::reqd_work_group_size or
-// sycl::reqd_work_group_size spellings.
+// Default arguments can only be used with the sycl::reqd_work_group_size
+// spelling.
 def ReqdWorkGroupSize : InheritableAttr {
   let Spellings = [GNU<"reqd_work_group_size">,
-                   CXX11<"intel", "reqd_work_group_size">,
                    CXX11<"cl", "reqd_work_group_size">,
                    CXX11<"sycl", "reqd_work_group_size">];
   let Args = [ExprArgument<"XDim">,
@@ -3091,9 +3133,19 @@ def SwiftCall : DeclOrTypeAttr {
   let Documentation = [SwiftCallDocs];
 }
 
+def SwiftAsyncCall : DeclOrTypeAttr {
+  let Spellings = [Clang<"swiftasynccall">];
+  let Documentation = [SwiftAsyncCallDocs];
+}
+
 def SwiftContext : ParameterABIAttr {
   let Spellings = [Clang<"swift_context">];
   let Documentation = [SwiftContextDocs];
+}
+
+def SwiftAsyncContext : ParameterABIAttr {
+  let Spellings = [Clang<"swift_async_context">];
+  let Documentation = [SwiftAsyncContextDocs];
 }
 
 def SwiftErrorResult : ParameterABIAttr {
@@ -3553,6 +3605,13 @@ def NoSanitizeSpecific : InheritableAttr {
   let Documentation = [NoSanitizeAddressDocs, NoSanitizeThreadDocs,
                        NoSanitizeMemoryDocs];
   let ASTNode = 0;
+}
+
+def DisableSanitizerInstrumentation : InheritableAttr {
+  let Spellings = [Clang<"disable_sanitizer_instrumentation">];
+  let Subjects = SubjectList<[Function, ObjCMethod, GlobalVar]>;
+  let Documentation = [DisableSanitizerInstrumentationDocs];
+  let SimpleHandler = 1;
 }
 
 def CFICanonicalJumpTable : InheritableAttr {
@@ -4383,6 +4442,14 @@ def NoBuiltin : Attr {
   let Documentation = [NoBuiltinDocs];
 }
 
+def UsingIfExists : InheritableAttr {
+  let Spellings = [Clang<"using_if_exists", 0>];
+  let Subjects = SubjectList<[Using,
+                              UnresolvedUsingTypename,
+                              UnresolvedUsingValue], ErrorDiag>;
+  let Documentation = [UsingIfExistsDocs];
+}
+
 // FIXME: This attribute is not inheritable, it will not be propagated to
 // redecls. [[clang::lifetimebound]] has the same problems. This should be
 // fixed in TableGen (by probably adding a new inheritable flag).
@@ -4429,4 +4496,13 @@ def EnforceTCBLeaf : InheritableAttr {
   let Args = [StringArgument<"TCBName">];
   let Documentation = [EnforceTCBLeafDocs];
   bit InheritEvenIfAlreadyPresent = 1;
+}
+
+def Error : InheritableAttr {
+  let Spellings = [GCC<"error">, GCC<"warning">];
+  let Accessors = [Accessor<"isError", [GCC<"error">]>,
+                   Accessor<"isWarning", [GCC<"warning">]>];
+  let Args = [StringArgument<"UserDiagnostic">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [ErrorAttrDocs];
 }

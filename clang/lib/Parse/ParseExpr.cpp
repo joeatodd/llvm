@@ -1472,6 +1472,9 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw___builtin_sycl_unique_stable_name:
     Res = ParseSYCLUniqueStableNameExpression();
     break;
+  case tok::kw___builtin_sycl_unique_stable_id:
+    Res = ParseSYCLUniqueStableIdExpression();
+    break;
 
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
@@ -2397,7 +2400,7 @@ Parser::ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
 /// a parameter.
 ExprResult Parser::ParseSYCLUniqueStableNameExpression() {
   assert(Tok.is(tok::kw___builtin_sycl_unique_stable_name) &&
-         "Not __bulitin_sycl_unique_stable_name");
+         "Not __builtin_sycl_unique_stable_name");
 
   SourceLocation OpLoc = ConsumeToken();
   BalancedDelimiterTracker T(*this, tok::l_paren);
@@ -2419,6 +2422,37 @@ ExprResult Parser::ParseSYCLUniqueStableNameExpression() {
 
   return Actions.ActOnSYCLUniqueStableNameExpr(OpLoc, T.getOpenLocation(),
                                                T.getCloseLocation(), Ty.get());
+}
+
+// Parse a __builtin_sycl_unique_stable_id expression. Accepts an expression,
+// but we later ensure that it MUST be a DeclRefExpr to a VarDecl of some form.
+ExprResult Parser::ParseSYCLUniqueStableIdExpression() {
+  assert(Tok.is(tok::kw___builtin_sycl_unique_stable_id) &&
+         "Not __bulitin_sycl_unique_stable_id");
+
+  SourceLocation OpLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after,
+                         "__builtin_sycl_unique_stable_id"))
+    return ExprError();
+
+  EnterExpressionEvaluationContext ConstantEvaluated(
+      Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+  ExprResult VarExpr =
+      Actions.CorrectDelayedTyposInExpr(ParseAssignmentExpression());
+
+  if (!VarExpr.isUsable()) {
+    T.skipToEnd();
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnSYCLUniqueStableIdExpr(
+      OpLoc, T.getOpenLocation(), T.getCloseLocation(), VarExpr.get());
 }
 
 /// Parse a sizeof or alignof expression.

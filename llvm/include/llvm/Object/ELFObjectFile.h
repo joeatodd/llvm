@@ -96,6 +96,10 @@ public:
 
   std::vector<std::pair<Optional<DataRefImpl>, uint64_t>>
   getPltAddresses() const;
+
+  /// Returns a vector containing a symbol version for each dynamic symbol.
+  /// Returns an empty vector if version sections do not exist.
+  Expected<std::vector<VersionEntry>> readDynsymVersions() const;
 };
 
 class ELFSectionRef : public SectionRef {
@@ -975,9 +979,6 @@ ELFObjectFile<ELFT>::section_rel_end(DataRefImpl Sec) const {
 template <class ELFT>
 Expected<section_iterator>
 ELFObjectFile<ELFT>::getRelocatedSection(DataRefImpl Sec) const {
-  if (EF.getHeader().e_type != ELF::ET_REL)
-    return section_end();
-
   const Elf_Shdr *EShdr = getSection(Sec);
   uintX_t Type = EShdr->sh_type;
   if (Type != ELF::SHT_REL && Type != ELF::SHT_RELA)
