@@ -421,7 +421,7 @@ CUstream _pi_event::get_stream() const noexcept {
   case PI_COMMAND_TYPE_SVM_MEMFILL:
   case PI_COMMAND_TYPE_SVM_MAP:
   case PI_COMMAND_TYPE_SVM_UNMAP:
-    return this->get_queue()->get_mem();
+    return this->get_queue()->get_alt_stream();
   default:
     cl::sycl::detail::pi::die("Invalid command type.");
     return 0;
@@ -518,7 +518,7 @@ pi_result enqueueEventWait(pi_queue queue, pi_event event) {
 
   retErr = PI_CHECK_ERROR(cuStreamWaitEvent(queue->get(), event->get(), 0));
   if (retErr == PI_SUCCESS) {
-    retErr = PI_CHECK_ERROR(cuStreamWaitEvent(queue->get_mem(), event->get(), 0));
+    retErr = PI_CHECK_ERROR(cuStreamWaitEvent(queue->get_alt_stream(), event->get(), 0));
   }
   return retErr;
 }
@@ -2274,7 +2274,7 @@ pi_result cuda_piQueueRelease(pi_queue command_queue) {
     PI_CHECK_ERROR(cuStreamSynchronize(stream));
     PI_CHECK_ERROR(cuStreamDestroy(stream));
 
-    auto memStream = queueImpl->get_mem();
+    auto memStream = queueImpl->get_alt_stream();
     PI_CHECK_ERROR(cuStreamSynchronize(memStream));
     PI_CHECK_ERROR(cuStreamDestroy(memStream));
 
@@ -2298,7 +2298,7 @@ pi_result cuda_piQueueFinish(pi_queue command_queue) {
     ScopedContext active(command_queue->get_context());
     result = PI_CHECK_ERROR(cuStreamSynchronize(command_queue->get()));
     if(result == PI_SUCCESS){
-      result = PI_CHECK_ERROR(cuStreamSynchronize(command_queue->get_mem()));
+      result = PI_CHECK_ERROR(cuStreamSynchronize(command_queue->get_alt_stream()));
     }
   } catch (pi_result err) {
 
@@ -2320,7 +2320,7 @@ pi_result cuda_piQueueFinish(pi_queue command_queue) {
 /// \return PI_SUCCESS
 pi_result cuda_piextQueueGetNativeHandle(pi_queue queue,
                                          pi_native_handle *nativeHandle) {
-  *nativeHandle = reinterpret_cast<pi_native_handle>(queue->get()); // TODO joe: two streams...
+  *nativeHandle = reinterpret_cast<pi_native_handle>(queue->get());
   return PI_SUCCESS;
 }
 
@@ -2354,7 +2354,7 @@ pi_result cuda_piEnqueueMemBufferWrite(pi_queue command_queue, pi_mem buffer,
   assert(buffer != nullptr);
   assert(command_queue != nullptr);
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
   CUdeviceptr devPtr = buffer->mem_.buffer_mem_.get();
   std::unique_ptr<_pi_event> retImplEv{nullptr};
 
@@ -2400,7 +2400,7 @@ pi_result cuda_piEnqueueMemBufferRead(pi_queue command_queue, pi_mem buffer,
   assert(buffer != nullptr);
   assert(command_queue != nullptr);
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
   CUdeviceptr devPtr = buffer->mem_.buffer_mem_.get();
   std::unique_ptr<_pi_event> retImplEv{nullptr};
 
@@ -3820,7 +3820,7 @@ pi_result cuda_piEnqueueMemBufferReadRect(
   assert(command_queue != nullptr);
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
   CUdeviceptr devPtr = buffer->mem_.buffer_mem_.get();
   std::unique_ptr<_pi_event> retImplEv{nullptr};
 
@@ -3871,7 +3871,7 @@ pi_result cuda_piEnqueueMemBufferWriteRect(
   assert(command_queue != nullptr);
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
   CUdeviceptr devPtr = buffer->mem_.buffer_mem_.get();
   std::unique_ptr<_pi_event> retImplEv{nullptr};
 
@@ -3938,7 +3938,7 @@ pi_result cuda_piEnqueueMemBufferCopy(pi_queue command_queue, pi_mem src_buffer,
       result = retImplEv->start();
     }
 
-    auto stream = command_queue->get_mem();
+    auto stream = command_queue->get_alt_stream();
     auto src = src_buffer->mem_.buffer_mem_.get() + src_offset;
     auto dst = dst_buffer->mem_.buffer_mem_.get() + dst_offset;
 
@@ -3970,7 +3970,7 @@ pi_result cuda_piEnqueueMemBufferCopyRect(
   assert(command_queue != nullptr);
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
   CUdeviceptr srcPtr = src_buffer->mem_.buffer_mem_.get();
   CUdeviceptr dstPtr = dst_buffer->mem_.buffer_mem_.get();
   std::unique_ptr<_pi_event> retImplEv{nullptr};
@@ -4045,7 +4045,7 @@ pi_result cuda_piEnqueueMemBufferFill(pi_queue command_queue, pi_mem buffer,
     }
 
     auto dstDevice = buffer->mem_.buffer_mem_.get() + offset;
-    auto stream = command_queue->get_mem();
+    auto stream = command_queue->get_alt_stream();
     auto N = size / pattern_size;
 
     // pattern size in bytes
@@ -4206,7 +4206,7 @@ pi_result cuda_piEnqueueMemImageRead(
   assert(image->mem_type_ == _pi_mem::mem_type::surface);
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
 
   try {
     ScopedContext active(command_queue->get_context());
@@ -4279,7 +4279,7 @@ cuda_piEnqueueMemImageWrite(pi_queue command_queue, pi_mem image,
   assert(image->mem_type_ == _pi_mem::mem_type::surface);
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
 
   try {
     ScopedContext active(command_queue->get_context());
@@ -4344,7 +4344,7 @@ pi_result cuda_piEnqueueMemImageCopy(pi_queue command_queue, pi_mem src_image,
          dst_image->mem_.surface_mem_.get_image_type());
 
   pi_result retErr = PI_SUCCESS;
-  CUstream cuStream = command_queue->get_mem();
+  CUstream cuStream = command_queue->get_alt_stream();
 
   try {
     ScopedContext active(command_queue->get_context());
@@ -4638,7 +4638,7 @@ pi_result cuda_piextUSMEnqueueMemset(pi_queue queue, void *ptr, pi_int32 value,
                                      pi_event *event) {
   assert(queue != nullptr);
   assert(ptr != nullptr);
-  CUstream cuStream = queue->get_mem();
+  CUstream cuStream = queue->get_alt_stream();
   pi_result result = PI_SUCCESS;
   std::unique_ptr<_pi_event> event_ptr{nullptr};
 
@@ -4672,7 +4672,7 @@ pi_result cuda_piextUSMEnqueueMemcpy(pi_queue queue, pi_bool blocking,
   assert(queue != nullptr);
   assert(dst_ptr != nullptr);
   assert(src_ptr != nullptr);
-  CUstream cuStream = queue->get_mem();
+  CUstream cuStream = queue->get_alt_stream();
   pi_result result = PI_SUCCESS;
   std::unique_ptr<_pi_event> event_ptr{nullptr};
 
@@ -4714,7 +4714,7 @@ pi_result cuda_piextUSMEnqueuePrefetch(pi_queue queue, const void *ptr,
     return PI_INVALID_VALUE;
   assert(queue != nullptr);
   assert(ptr != nullptr);
-  CUstream cuStream = queue->get_mem();
+  CUstream cuStream = queue->get_alt_stream();
   pi_result result = PI_SUCCESS;
   std::unique_ptr<_pi_event> event_ptr{nullptr};
 
