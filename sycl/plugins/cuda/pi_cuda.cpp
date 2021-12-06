@@ -511,17 +511,21 @@ pi_result _pi_event::release() {
   return PI_SUCCESS;
 }
 
-// TODO joe: re-add Ruyman's hack here properly
-// makes all future work submitted to queue wait for all work captured in event.
+pi_result enqueueEventWaitStream(CUstream stream, pi_event event){
+  // no-op for same stream, CUDA streams are in-order
+  if(event->get_stream() == stream) return PI_SUCCESS;
+  return PI_CHECK_ERROR(cuStreamWaitEvent(stream, event->get(), 0));
+}
+
 pi_result enqueueEventWait(pi_queue queue, pi_event event) {
   // for native events, the cuStreamWaitEvent call is used.
   // This makes all future work submitted to stream wait for all
   // work captured in event.
   pi_result retErr;
 
-  retErr = PI_CHECK_ERROR(cuStreamWaitEvent(queue->get(), event->get(), 0));
-  if (retErr == PI_SUCCESS) {
-    retErr = PI_CHECK_ERROR(cuStreamWaitEvent(queue->get_alt_stream(), event->get(), 0));
+  retErr = enqueueEventWaitStream(queue->get(), event);
+  if (queue->use_alt_stream() && retErr == PI_SUCCESS) {
+    retErr = enqueueEventWaitStream(queue->get_alt_stream(), event);
   }
   return retErr;
 }
